@@ -10,6 +10,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def user_interaction_agent(state: dict) -> dict:
     input_text = state["input"]
+    website_url = state["website"]  # Use the website URL provided in the API request
 
     prompt = f"""
     Extract structured test requirements from the user request below.
@@ -17,8 +18,9 @@ def user_interaction_agent(state: dict) -> dict:
     User Request:
     {input_text}
 
+    Website URL: {website_url}
+
     Structured Requirements should include:
-    - Website URL or page (if mentioned)
     - UI Elements or Components to test
     - Branding guidelines mentioned
     - UX considerations
@@ -26,7 +28,7 @@ def user_interaction_agent(state: dict) -> dict:
 
     Output as raw JSON only, no explanation or markdown formatting.
     {{
-        "website": "<URL or description>",
+        "website": "{website_url}",
         "components": ["<component 1>", "<component 2>", "..."],
         "branding_guidelines": "<guidelines or 'default'>",
         "ux_considerations": "<specific considerations or 'default'>",
@@ -43,7 +45,10 @@ def user_interaction_agent(state: dict) -> dict:
         temperature=0.2
     )
 
-    raw_output = response.choices[0].message.content.strip()
+    raw_output = response.choices[0].message.content
+    if raw_output is None:
+        raise ValueError("OpenAI API returned None content")
+    raw_output = raw_output.strip()
 
     try:
         parsed = json.loads(raw_output)
@@ -52,7 +57,10 @@ def user_interaction_agent(state: dict) -> dict:
         print("Raw output was:\n", raw_output)
         raise e
 
+    # Ensure we use the website URL from the API request
+    parsed["website"] = website_url
+
     return {
         "requirements": parsed,
-        "website": parsed.get("website")
+        "website": website_url  # Use the provided website URL
     }
