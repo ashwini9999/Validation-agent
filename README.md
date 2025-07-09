@@ -27,6 +27,7 @@ User Input → UIA → TSPA → BUVA → PMEA → RAA → RCA → Final Report
 
 - **Natural Language Test Generation**: Describe your testing needs in plain English
 - **Automated Browser Testing**: Powered by Playwright for reliable web automation
+- **Interactive Authentication**: Browser window pops up for manual login (handles 2FA, CAPTCHA, etc.)
 - **Branding Validation**: Checks visual identity elements like logos, colors, and fonts
 - **UX Assessment**: Evaluates layout, spacing, responsiveness, and accessibility
 - **Screenshot Capture**: Automatic visual evidence collection during testing
@@ -92,6 +93,18 @@ The API will be available at `http://localhost:8000`
 }
 ```
 
+**With Interactive Authentication (for internal websites)**:
+```json
+{
+  "input": "Test the dashboard navigation and verify branding consistency",
+  "website": "https://internal-portal.company.com/dashboard",
+  "auth_config": {
+    "type": "interactive",
+    "timeout": 180
+  }
+}
+```
+
 **Response**:
 ```json
 {
@@ -120,6 +133,43 @@ response = requests.post('http://localhost:8000/run', json={
 
 print(response.json()['final_report'])
 ```
+
+## 🔐 Interactive Authentication
+
+For internal websites that require authentication, use the simplified interactive authentication approach:
+
+### How it works:
+1. 🌐 **Browser Opens**: Main browser window opens and navigates to your website
+2. 🔄 **SSO Redirects**: Automatically follows all SSO redirects (e.g., Okta, Azure AD, etc.)
+3. 👤 **User Logs In**: Complete authentication manually (2FA, CAPTCHA, SSO, etc.)
+4. ✅ **Click Complete**: Click the green "Authentication Mode" indicator when done
+5. 🤖 **Testing Begins**: System continues with testing using the authenticated session
+
+### Benefits:
+- ✅ **Session Preservation**: Authentication happens in main browser context
+- ✅ **SSO Compatible**: Handles complex SSO redirects seamlessly
+- ✅ **No Cookie Transfer**: No need to transfer cookies between contexts
+- ✅ **Universal Compatibility**: Works with any authentication system
+- ✅ **Secure**: No credentials stored or transmitted
+
+### Example Usage:
+```python
+import requests
+
+# Test an internal website with interactive auth
+response = requests.post('http://localhost:8000/run', json={
+    "input": "Test the admin panel navigation and branding compliance",
+    "website": "https://admin.company.com",
+    "auth_config": {
+        "type": "interactive",
+        "timeout": 300  # 5 minutes (optional)
+    }
+})
+
+print(response.json()['final_report'])
+```
+
+
 
 ## 🤖 Agent Details
 

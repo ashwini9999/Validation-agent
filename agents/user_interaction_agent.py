@@ -2,6 +2,13 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import json
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from logging_config import (
+    log_agent_start, log_agent_thinking, log_llm_prompt, 
+    log_llm_response, log_agent_complete, log_agent_error
+)
 
 load_dotenv()
 
@@ -9,8 +16,17 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def user_interaction_agent(state: dict) -> dict:
+    log_agent_start("UIA", {
+        "input_length": len(state["input"]),
+        "website": state["website"]
+    })
+    
     input_text = state["input"]
     website_url = state["website"]  # Use the website URL provided in the API request
+
+    log_agent_thinking("UIA", "Analyzing user input to extract structured requirements")
+    log_agent_thinking("UIA", f"User wants to test: {input_text[:100]}...")
+    log_agent_thinking("UIA", f"Target website: {website_url}")
 
     prompt = f"""
     Extract structured test requirements from the user request below.
@@ -36,6 +52,9 @@ def user_interaction_agent(state: dict) -> dict:
     }}
     """
 
+    log_agent_thinking("UIA", "Preparing to send requirements extraction prompt to LLM")
+    log_llm_prompt("UIA", prompt)
+
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[
@@ -47,20 +66,51 @@ def user_interaction_agent(state: dict) -> dict:
 
     raw_output = response.choices[0].message.content
     if raw_output is None:
-        raise ValueError("OpenAI API returned None content")
+        error_msg = "OpenAI API returned None content"
+        log_agent_error("UIA", error_msg)
+        raise ValueError(error_msg)
+    
+    log_llm_response("UIA", raw_output)
+    log_agent_thinking("UIA", "Parsing LLM response into structured format")
+    
     raw_output = raw_output.strip()
 
     try:
         parsed = json.loads(raw_output)
+        log_agent_thinking("UIA", f"Successfully parsed requirements: {len(parsed.get('components', []))} components identified")
+        
+        # Log what was extracted
+        components = parsed.get('components', [])
+        if components:
+            log_agent_thinking("UIA", f"Components to test: {', '.join(components)}")
+        
+        branding = parsed.get('branding_guidelines', 'default')
+        if branding != 'default':
+            log_agent_thinking("UIA", f"Branding guidelines: {branding}")
+        
+        ux = parsed.get('ux_considerations', 'default')
+        if ux != 'default':
+            log_agent_thinking("UIA", f"UX considerations: {ux}")
+            
     except json.JSONDecodeError as e:
-        print("❌ JSON decode error in user_interaction_agent")
-        print("Raw output was:\n", raw_output)
+        error_msg = f"JSON decode error: {str(e)}"
+        log_agent_error("UIA", error_msg)
+        log_agent_error("UIA", f"Raw output was: {raw_output}")
         raise e
 
     # Ensure we use the website URL from the API request
     parsed["website"] = website_url
 
-    return {
+    result = {
         "requirements": parsed,
         "website": website_url  # Use the provided website URL
     }
+    
+    log_agent_complete("UIA", {
+        "components_count": len(parsed.get('components', [])),
+        "has_branding_guidelines": parsed.get('branding_guidelines', 'default') != 'default',
+        "has_ux_considerations": parsed.get('ux_considerations', 'default') != 'default',
+        "website": website_url
+    })
+    
+    return result

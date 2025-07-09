@@ -10,7 +10,12 @@ from agents.reporting_communication_agent import reporting_communication_agent
 from langgraph.graph import StateGraph
 
 import asyncio
-from typing import TypedDict
+import logging
+from typing import TypedDict, Optional
+from logging_config import setup_logging
+
+# Initialize logging
+setup_logging(log_level=logging.INFO)
 
 class AgentState(TypedDict):
     input: str
@@ -21,6 +26,7 @@ class AgentState(TypedDict):
     execution_results: list
     analysed_results: dict
     final_report: str
+    auth_config: Optional[dict]  # Add authentication configuration
 
 workflow = StateGraph(AgentState)
 
