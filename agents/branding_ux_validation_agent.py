@@ -1,4 +1,5 @@
-from openai import OpenAI
+from openai import AzureOpenAI
+
 from dotenv import load_dotenv
 import os
 import json
@@ -10,7 +11,11 @@ from logging_config import (
 )
 
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+)
 
 def branding_ux_validation_agent(state: dict) -> dict:
     log_agent_start("BUVA", {

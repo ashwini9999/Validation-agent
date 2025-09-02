@@ -1,4 +1,4 @@
-from openai import OpenAI
+from openai import AzureOpenAI
 from dotenv import load_dotenv
 import os
 import json
@@ -12,8 +12,11 @@ from logging_config import (
 
 load_dotenv()
 
-# ✅ Define OpenAI client here at module level
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+)
 
 def user_interaction_agent(state: dict) -> dict:
     log_agent_start("UIA", {

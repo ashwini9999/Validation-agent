@@ -2,7 +2,8 @@ import json
 import asyncio
 import base64
 from playwright.async_api import async_playwright
-from openai import OpenAI
+from openai import AzureOpenAI
+
 from dotenv import load_dotenv
 import os
 import sys
@@ -15,7 +16,11 @@ from logging_config import (
 )
 
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+)
 
 def extract_json_from_response(raw_response):
     """Extract JSON from LLM response that might be wrapped in markdown or contain extra text"""
