@@ -1,4 +1,4 @@
-# UI/UX Testing Agent
+# Validation Agent
 
 ## Installation
 
@@ -13,10 +13,10 @@
 1. **Clone the repository**:
    ```bash
    git clone <repository-url>
-   cd uiux-testing-agent
+   cd validation-agent
    ```
 2. Setup virtual env and activate
- ```bash
+   ```bash
    python -m venv venv
    venv\Scripts\Activate
    ```
@@ -28,14 +28,14 @@
    pip install -r requirements.txt
    ```
 
-4. **Install Playwright browsers**:
+4. **Install Playwright browsers and other dependencies**:
    ```bash
    playwright install
    pip install fastapi uvicorn playwright python-dotenv openai
    ```
 
 5. **Set up environment variables**:
-   Create a `.env` file in the root directory, can extract all this from :
+   Create a `.env` file in the root directory:
    ```env
    AZURE_OPENAI_API_KEY=your key
    AZURE_OPENAI_ENDPOINT= 
@@ -48,13 +48,13 @@
    mkdir screenshots
    ```
 
-## 🚀 Usage
+## Usage
 
 ### Starting the API Server
 
-```bash
-uvicorn api:api --port 8000
-```
+   ```bash
+   uvicorn api:api --port 8000
+   ```
 
 The API will be available at `http://127.0.0.1:8000/docs`
 
@@ -63,15 +63,15 @@ The API will be available at `http://127.0.0.1:8000/docs`
 **POST** `/run`
 
 **Request Body**:
-```json
-{
-  "input": "On the home page verify that the list with role tablist below the 'Search' button now has children exposing appropriate accessibility roles.",
-  "website": "***",
-  "auth_config": {
-    "type": "mslogin",
-    "username": "***",
-    "password": "***"
-  }
-}
+   ```json
+   {
+      "input": "On the home page verify that the list with role tablist below the 'Search' button now has children exposing appropriate          accessibility roles.",
+       "website": "***",
+       "auth_config": {
+       "type": "login",
+       "username": "***",
+       "password": "***"
+    }
+   }
 
-```
+   ```
