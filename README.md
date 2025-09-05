@@ -65,7 +65,7 @@ The API will be available at `http://127.0.0.1:8000/docs`
 **Request Body**:
 ```json
 {
-  "input": "On the home page with H1 heading 'Loop', verify that the list with role tablist below the 'Search' button now has children exposing appropriate accessibility roles.",
+  "input": "On the home page verify that the list with role tablist below the 'Search' button now has children exposing appropriate accessibility roles.",
   "website": "***",
   "auth_config": {
     "type": "mslogin",
