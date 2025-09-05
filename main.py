@@ -4,7 +4,8 @@ import asyncio
 import logging
 
 from logging_config import setup_logging, get_agent_logger
-from agents.orchestrator_agent import orchestrator_run
+#from agents.orchestrator_agent import orchestrator_run
+from core.orchestrator_agent import orchestrator_run
 
 # ----- logging -----
 setup_logging(log_level=logging.INFO)
