@@ -13,7 +13,7 @@
 1. **Clone the repository**:
    ```bash
    git clone <repository-url>
-   cd validation-agent
+   cd Validation-agent
    ```
 2. Setup virtual env and activate
    ```bash
