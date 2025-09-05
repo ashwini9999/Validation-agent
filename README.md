@@ -1,14 +1,5 @@
 # UI/UX Testing Agent
 
-### Agent Workflow
-
-1. **User Interaction Agent (UIA)** - Extracts structured requirements from natural language input
-2. **Test Scenario Planning Agent (TSPA)** - Creates detailed test scenarios based on requirements
-3. **Branding UX Validation Agent (BUVA)** - Enriches scenarios with branding and UX validation checks
-4. **Playwright Execution Agent (PMEA)** - Executes tests using browser automation
-5. **Result Analysis Agent (RAA)** - Analyzes test results and generates summaries
-6. **Reporting Communication Agent (RCA)** - Creates comprehensive human-readable reports
-
 ## Installation
 
 ### Prerequisites
@@ -24,22 +15,30 @@
    git clone <repository-url>
    cd uiux-testing-agent
    ```
+2. Setup virtual env and activate
+ ```bash
+   python -m venv venv
+   venv\Scripts\Activate
+   ```
 
-2. **Install Python dependencies**:
+##Once virtual env is activated: 
+
+3. **Install Python dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Install Playwright browsers**:
+4. **Install Playwright browsers**:
    ```bash
    playwright install
+   pip install fastapi uvicorn playwright python-dotenv openai
    ```
 
-4. **Set up environment variables**:
-   Create a `.env` file in the root directory:
+5. **Set up environment variables**:
+   Create a `.env` file in the root directory, can extract all this from :
    ```env
    AZURE_OPENAI_API_KEY=your key
-   AZURE_OPENAI_ENDPOINT
+   AZURE_OPENAI_ENDPOINT= 
    AZURE_OPENAI_DEPLOYMENT_NAME
    AZURE_OPENAI_API_VERSION
    ```
@@ -54,10 +53,10 @@
 ### Starting the API Server
 
 ```bash
-uvicorn api:api --reload --port 8000
+uvicorn api:api --port 8000
 ```
 
-The API will be available at `http://localhost:8000`
+The API will be available at `http://127.0.0.1:8000/docs`
 
 ### API Endpoint
 
@@ -66,7 +65,13 @@ The API will be available at `http://localhost:8000`
 **Request Body**:
 ```json
 {
-  "input": "Test the homepage navigation menu and check if the logo is properly displayed",
-  "website": "https://example.com"
+  "input": "On the home page with H1 heading 'Loop', verify that the list with role tablist below the 'Search' button now has children exposing appropriate accessibility roles.",
+  "website": "***",
+  "auth_config": {
+    "type": "mslogin",
+    "username": "***",
+    "password": "***"
+  }
 }
+
 ```
