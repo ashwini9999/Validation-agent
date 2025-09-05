@@ -19,7 +19,8 @@ client = AzureOpenAI(
 )
 
 def user_interaction_agent(state: dict) -> dict:
-    log_agent_start("UIA", {
+    # Use 'ReqX' to avoid confusion with the UIA classifier/router
+    log_agent_start("ReqX", {
         "input_length": len(state["input"]),
         "website": state["website"]
     })
@@ -27,9 +28,9 @@ def user_interaction_agent(state: dict) -> dict:
     input_text = state["input"]
     website_url = state["website"]  # Use the website URL provided in the API request
 
-    log_agent_thinking("UIA", "Analyzing user input to extract structured requirements")
-    log_agent_thinking("UIA", f"User wants to test: {input_text[:100]}...")
-    log_agent_thinking("UIA", f"Target website: {website_url}")
+    log_agent_thinking("ReqX", "Analyzing user input to extract structured requirements")
+    log_agent_thinking("ReqX", f"User wants to test: {input_text[:100]}...")
+    log_agent_thinking("ReqX", f"Target website: {website_url}")
 
     prompt = f"""
     Extract structured test requirements from the user request below.
@@ -55,8 +56,8 @@ def user_interaction_agent(state: dict) -> dict:
     }}
     """
 
-    log_agent_thinking("UIA", "Preparing to send requirements extraction prompt to LLM")
-    log_llm_prompt("UIA", prompt)
+    log_agent_thinking("ReqX", "Preparing to send requirements extraction prompt to LLM")
+    log_llm_prompt("ReqX", prompt)
 
     response = client.chat.completions.create(
         model="gpt-4",
@@ -70,35 +71,35 @@ def user_interaction_agent(state: dict) -> dict:
     raw_output = response.choices[0].message.content
     if raw_output is None:
         error_msg = "OpenAI API returned None content"
-        log_agent_error("UIA", error_msg)
+        log_agent_error("ReqX", error_msg)
         raise ValueError(error_msg)
     
-    log_llm_response("UIA", raw_output)
-    log_agent_thinking("UIA", "Parsing LLM response into structured format")
+    log_llm_response("ReqX", raw_output)
+    log_agent_thinking("ReqX", "Parsing LLM response into structured format")
     
     raw_output = raw_output.strip()
 
     try:
         parsed = json.loads(raw_output)
-        log_agent_thinking("UIA", f"Successfully parsed requirements: {len(parsed.get('components', []))} components identified")
+        log_agent_thinking("ReqX", f"Successfully parsed requirements: {len(parsed.get('components', []))} components identified")
         
         # Log what was extracted
         components = parsed.get('components', [])
         if components:
-            log_agent_thinking("UIA", f"Components to test: {', '.join(components)}")
+            log_agent_thinking("ReqX", f"Components to test: {', '.join(components)}")
         
         branding = parsed.get('branding_guidelines', 'default')
         if branding != 'default':
-            log_agent_thinking("UIA", f"Branding guidelines: {branding}")
+            log_agent_thinking("ReqX", f"Branding guidelines: {branding}")
         
         ux = parsed.get('ux_considerations', 'default')
         if ux != 'default':
-            log_agent_thinking("UIA", f"UX considerations: {ux}")
+            log_agent_thinking("ReqX", f"UX considerations: {ux}")
             
     except json.JSONDecodeError as e:
         error_msg = f"JSON decode error: {str(e)}"
-        log_agent_error("UIA", error_msg)
-        log_agent_error("UIA", f"Raw output was: {raw_output}")
+        log_agent_error("ReqX", error_msg)
+        log_agent_error("ReqX", f"Raw output was: {raw_output}")
         raise e
 
     # Ensure we use the website URL from the API request
@@ -109,7 +110,7 @@ def user_interaction_agent(state: dict) -> dict:
         "website": website_url  # Use the provided website URL
     }
     
-    log_agent_complete("UIA", {
+    log_agent_complete("ReqX", {
         "components_count": len(parsed.get('components', [])),
         "has_branding_guidelines": parsed.get('branding_guidelines', 'default') != 'default',
         "has_ux_considerations": parsed.get('ux_considerations', 'default') != 'default',

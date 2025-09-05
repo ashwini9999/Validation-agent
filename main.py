@@ -1,55 +1,45 @@
 # main.py
-
-from agents.user_interaction_agent import user_interaction_agent
-from agents.test_scenario_planning_agent import test_scenario_planning_agent
-from agents.branding_ux_validation_agent import branding_ux_validation_agent
-from agents.playwright_execution_agent import playwright_execution_agent
-from agents.result_analysis_agent import result_analysis_agent
-from agents.reporting_communication_agent import reporting_communication_agent
-
-from langgraph.graph import StateGraph
-
+from typing import TypedDict, List, Dict, Any, Optional
 import asyncio
 import logging
-from typing import TypedDict, Optional
-from logging_config import setup_logging
 
-# Initialize logging
+from logging_config import setup_logging, get_agent_logger
+from agents.orchestrator_agent import orchestrator_run
+
+# ----- logging -----
 setup_logging(log_level=logging.INFO)
+logger = get_agent_logger("MAIN")
 
-class AgentState(TypedDict):
+# ----- AgentState shape expected by api.py -----
+class AgentState(TypedDict, total=False):
     input: str
     website: str
-    requirements: dict
-    scenarios: list
-    enriched_scenarios: list
-    execution_results: list
-    analysed_results: dict
+    requirements: Dict[str, Any]
+    scenarios: List[Dict[str, Any]]
+    enriched_scenarios: List[Dict[str, Any]]
+    execution_results: List[Dict[str, Any]]
+    analysed_results: Dict[str, Any]
     final_report: str
-    auth_config: Optional[dict]  # Add authentication configuration
+    auth_config: Dict[str, Any]
+    bug_description: str  # optional alias; orchestrator falls back to 'input'
 
-workflow = StateGraph(AgentState)
+# ----- Simple app wrapper providing .ainvoke(...) -----
+class _SimpleLangGraphApp:
+    async def ainvoke(self, state: AgentState) -> Dict[str, Any]:
+        logger.info("🧩 MAIN: invoking orchestrator")
+        # Orchestrator will:
+        #  - read state['input'] (or bug_description)
+        #  - extract requirements (ReqX)
+        #  - build scenarios
+        #  - run Playwright (PMEA)
+        #  - compute analysed_results.summary
+        result = await orchestrator_run(state)
+        logger.info("✅ MAIN: orchestrator completed")
+        return result
 
-# Define nodes
-workflow.add_node("UIA", user_interaction_agent)
-workflow.add_node("TSPA", test_scenario_planning_agent)
-workflow.add_node("BUVA", branding_ux_validation_agent)
-workflow.add_node("PMEA", playwright_execution_agent)
-workflow.add_node("RAA", result_analysis_agent)
-workflow.add_node("RCA", reporting_communication_agent)
+    # (Optional) sync helper if you ever need it
+    def invoke(self, state: AgentState) -> Dict[str, Any]:
+        return asyncio.run(self.ainvoke(state))
 
-# Entry point
-workflow.set_entry_point("UIA")
-
-# Define workflow edges (agent sequence)
-workflow.add_edge("UIA", "TSPA")
-workflow.add_edge("TSPA", "BUVA")
-workflow.add_edge("BUVA", "PMEA")
-workflow.add_edge("PMEA", "RAA")
-workflow.add_edge("RAA", "RCA")
-
-# Finish point (last agent in the chain)
-workflow.set_finish_point("RCA")
-
-# Compile into executable LangGraph app
-app = workflow.compile()
+# Exported symbols used by api.py
+app = _SimpleLangGraphApp()
