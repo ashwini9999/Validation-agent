@@ -1,9 +1,9 @@
 # core/orchestrator_agent.py
 from typing import Dict, Any, List
 from core.action_schema import _classify_intent
+from core.requirement_mapping import requirement_mapping
 from io_library.output import _generate_validation_agent_feedback
 from logging_config import get_agent_logger
-from validators.user_interaction_agent import user_interaction_agent
 from validators.accessibility_agent import playwright_execution_agent
 from validators.branding_ux_validation_agent import enrich_with_branding_ux  # can be a no-op in your repo
 
@@ -36,7 +36,7 @@ async def orchestrator_run(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # 1) Requirements extraction (kept for component awareness)
     try:
-        req_out = user_interaction_agent({"input": bug_description or state.get("input", ""), "website": website})
+        req_out = requirement_mapping({"input": bug_description or state.get("input", ""), "website": website})
         requirements = req_out.get("requirements", {}) if isinstance(req_out, dict) else {}
     except Exception as e:
         logger.error(f"ReqX extraction error: {e}")
