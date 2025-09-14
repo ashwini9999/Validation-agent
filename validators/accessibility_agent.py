@@ -10,21 +10,22 @@ from logging_config import (
     log_agent_start, log_agent_thinking, log_agent_complete,
     log_agent_error, log_playwright_action
 )
+from utility.agent_helper import AXE_LOCAL_PATHS, _ensure_dir
 
 LOOP_URL_HOST = "local.loop.microsoft.com"
 
-# ---------------- FS helpers ----------------
-def _ensure_dir(path: str):
-    os.makedirs(path, exist_ok=True)
+# # ---------------- FS helpers ----------------
+# def _ensure_dir(path: str):
+#     os.makedirs(path, exist_ok=True)
 
-def _ts() -> str:
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
+# def _ts() -> str:
+#     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
-# ---------------- axe-core helpers ----------------
-AXE_LOCAL_PATHS = [
-    "third_party/axe.min.js",        # preferred vendored path
-    "axe.min.js"                     # fallback if you drop it in project root
-]
+# # ---------------- axe-core helpers ----------------
+# AXE_LOCAL_PATHS = [
+#     "third_party/axe.min.js",        # preferred vendored path
+#     "axe.min.js"                     # fallback if you drop it in project root
+# ]
 
 async def _inject_axe_by_source(page: Page) -> None:
     """
