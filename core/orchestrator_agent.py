@@ -1,30 +1,14 @@
 # core/orchestrator_agent.py
 from typing import Dict, Any, List
 from core.action_schema import _classify_intent
+from core.requirement_mapping import requirement_mapping
 from io_library.output import _generate_validation_agent_feedback
 from logging_config import get_agent_logger
-from validators.user_interaction_agent import user_interaction_agent
+from utility.scenario_builder import _build_default_scenarios
 from validators.accessibility_agent import playwright_execution_agent
 from validators.branding_ux_validation_agent import enrich_with_branding_ux  # can be a no-op in your repo
 
 logger = get_agent_logger("ORCHESTRATOR")
-
-def _build_default_scenarios(requirements: Dict[str, Any], website: str) -> List[Dict[str, Any]]:
-    scenarios: List[Dict[str, Any]] = []
-    comps = (requirements or {}).get("components", []) or []
-    if comps:
-        for i, comp in enumerate(comps, 1):
-            scenarios.append({
-                "scenario_id": f"comp_{i}",
-                "description": f"Open {website} and capture state for component: {comp}",
-                "component": comp,
-            })
-    else:
-        scenarios.append({
-            "scenario_id": "baseline_homepage",
-            "description": f"Open {website} homepage and capture screenshot"
-        })
-    return scenarios
 
 async def orchestrator_run(state: Dict[str, Any]) -> Dict[str, Any]:
     bug_description = (state.get("bug_description") or state.get("input") or "").strip()
@@ -36,7 +20,7 @@ async def orchestrator_run(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # 1) Requirements extraction (kept for component awareness)
     try:
-        req_out = user_interaction_agent({"input": bug_description or state.get("input", ""), "website": website})
+        req_out = requirement_mapping({"input": bug_description or state.get("input", ""), "website": website})
         requirements = req_out.get("requirements", {}) if isinstance(req_out, dict) else {}
     except Exception as e:
         logger.error(f"ReqX extraction error: {e}")

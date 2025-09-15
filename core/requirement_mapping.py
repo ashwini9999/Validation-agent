@@ -1,10 +1,10 @@
-from openai import AzureOpenAI
 from dotenv import load_dotenv
 import os
 import json
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from ai_model.azure_openAI import _get_response_from_azure_openAI
 from logging_config import (
     log_agent_start, log_agent_thinking, log_llm_prompt, 
     log_llm_response, log_agent_complete, log_agent_error
@@ -12,13 +12,8 @@ from logging_config import (
 
 load_dotenv()
 
-client = AzureOpenAI(
-    api_key=os.getenv("AZURE_OPENAI_KEY"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
-)
 
-def user_interaction_agent(state: dict) -> dict:
+def requirement_mapping(state: dict) -> dict:
     # Use 'ReqX' to avoid confusion with the UIA classifier/router
     log_agent_start("ReqX", {
         "input_length": len(state["input"]),
@@ -58,17 +53,11 @@ def user_interaction_agent(state: dict) -> dict:
 
     log_agent_thinking("ReqX", "Preparing to send requirements extraction prompt to LLM")
     log_llm_prompt("ReqX", prompt)
+  
+    system_msg = "You're an expert test analyst extracting structured testing requirements."
 
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You're an expert test analyst extracting structured testing requirements."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2
-    )
+    raw_output = _get_response_from_azure_openAI(system_msg, prompt)
 
-    raw_output = response.choices[0].message.content
     if raw_output is None:
         error_msg = "OpenAI API returned None content"
         log_agent_error("ReqX", error_msg)
