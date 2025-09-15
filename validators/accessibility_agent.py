@@ -1,4 +1,29 @@
 # agents/accessibility_agent.py
+"""
+Accessibility testing agent with comprehensive ARIA label validation and bug fixing.
+
+This agent provides:
+1. Basic axe-core accessibility testing
+2. Specific tablist children group testing
+3. Comprehensive ARIA label detection and validation
+4. Automatic ARIA label bug fixing
+5. Combined test-and-fix workflows
+
+New ARIA Testing Capabilities:
+- Detects buttons without accessible names
+- Identifies form inputs without proper labels
+- Finds links with poor or missing descriptive text
+- Checks images without alt text
+- Identifies redundant or incorrect ARIA roles
+- Automatically attempts to fix detected issues
+- Provides before/after metrics and validation
+
+Supported scenario kinds:
+- "a11y_tablist_children_group_check": Original tablist testing
+- "a11y_aria_labels_comprehensive": Comprehensive ARIA detection only
+- "a11y_aria_labels_fix": ARIA bug fixing only
+- "a11y_aria_labels_test_and_fix": Combined detection, fixing, and validation
+"""
 import asyncio
 import os
 import re
@@ -14,6 +39,10 @@ from utility.agent_helper import AXE_LOCAL_PATHS, _ensure_dir
 from utility.login_helper import click_sign_in_and_capture_ms_page, ms_login
 
 LOOP_URL_HOST = "local.loop.microsoft.com"
+
+def _ts() -> str:
+    """Generate timestamp string for file naming"""
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 async def _inject_axe_by_source(page: Page) -> None:
     """
@@ -342,6 +371,620 @@ async def test_tablist_children_group(page: Page, website: str) -> Dict[str, Any
         }
 
 # ---------------- scenario executor ----------------
+async def test_aria_labels_comprehensive(page: Page, website: str) -> Dict[str, Any]:
+    """
+    Comprehensive ARIA label testing and bug detection.
+    Tests for missing or inadequate ARIA labels on interactive elements.
+    """
+    details: List[str] = []
+    issues: List[str] = []
+    fixes_applied: List[str] = []
+
+    try:
+        # Wait for page to be ready
+        await page.wait_for_selector("body", timeout=3000)
+        
+        # Run axe-core first for baseline accessibility violations
+        try:
+            axe = await _run_axe(page)
+            violations = axe.get("violations", []) if isinstance(axe, dict) else []
+            base = f"axe_report_aria_{_ts()}"
+            paths = _write_axe_reports(base, axe)
+            axe_summary = {
+                "violations_count": len(violations),
+                "violations": [
+                    {"id": v.get("id"), "impact": v.get("impact"), "nodes": len(v.get("nodes", []))}
+                    for v in violations
+                ],
+                "json_path": paths["json"],
+                "html_path": paths["html"],
+            }
+            details.append(f"axe-core baseline: {len(violations)} violation(s)")
+        except Exception as e:
+            axe_summary = {"error": f"axe-core run failed: {e}"}
+            details.append(f"axe-core baseline failed: {e}")
+
+        # Test 1: Check buttons without accessible names
+        buttons_without_labels = await page.evaluate("""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"]'));
+                return buttons.filter(btn => {
+                    const hasAriaLabel = btn.getAttribute('aria-label') && btn.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = btn.getAttribute('aria-labelledby');
+                    const hasVisibleText = btn.textContent && btn.textContent.trim();
+                    const hasValue = btn.value && btn.value.trim();
+                    const hasTitle = btn.title && btn.title.trim();
+                    
+                    return !hasAriaLabel && !hasAriaLabelledby && !hasVisibleText && !hasValue && !hasTitle;
+                }).map(btn => ({
+                    tagName: btn.tagName.toLowerCase(),
+                    type: btn.type || 'button',
+                    id: btn.id || null,
+                    className: btn.className || null,
+                    selector: btn.id ? `#${btn.id}` : `${btn.tagName.toLowerCase()}${btn.className ? '.' + btn.className.split(' ').join('.') : ''}`,
+                    location: `${btn.getBoundingClientRect().top},${btn.getBoundingClientRect().left}`
+                }));
+            }
+        """)
+        
+        if buttons_without_labels:
+            issues.append(f"Found {len(buttons_without_labels)} button(s) without accessible names")
+            details.extend([f"  - Button at {btn['location']}: {btn['selector']}" for btn in buttons_without_labels[:5]])
+            if len(buttons_without_labels) > 5:
+                details.append(f"  ... and {len(buttons_without_labels) - 5} more")
+
+        # Test 2: Check form inputs without labels
+        unlabeled_inputs = await page.evaluate("""
+            () => {
+                const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, select'));
+                return inputs.filter(input => {
+                    const hasAriaLabel = input.getAttribute('aria-label') && input.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = input.getAttribute('aria-labelledby');
+                    const hasLabel = document.querySelector(`label[for="${input.id}"]`) && input.id;
+                    const hasPlaceholder = input.placeholder && input.placeholder.trim();
+                    const hasTitle = input.title && input.title.trim();
+                    
+                    return !hasAriaLabel && !hasAriaLabelledby && !hasLabel && !hasPlaceholder && !hasTitle;
+                }).map(input => ({
+                    tagName: input.tagName.toLowerCase(),
+                    type: input.type || 'text',
+                    id: input.id || null,
+                    name: input.name || null,
+                    selector: input.id ? `#${input.id}` : `${input.tagName.toLowerCase()}${input.name ? `[name="${input.name}"]` : ''}`,
+                    location: `${input.getBoundingClientRect().top},${input.getBoundingClientRect().left}`
+                }));
+            }
+        """)
+        
+        if unlabeled_inputs:
+            issues.append(f"Found {len(unlabeled_inputs)} form input(s) without labels")
+            details.extend([f"  - Input at {inp['location']}: {inp['selector']}" for inp in unlabeled_inputs[:5]])
+            if len(unlabeled_inputs) > 5:
+                details.append(f"  ... and {len(unlabeled_inputs) - 5} more")
+
+        # Test 3: Check links without descriptive text
+        poor_links = await page.evaluate("""
+            () => {
+                const links = Array.from(document.querySelectorAll('a[href]'));
+                return links.filter(link => {
+                    const hasAriaLabel = link.getAttribute('aria-label') && link.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = link.getAttribute('aria-labelledby');
+                    const text = link.textContent && link.textContent.trim();
+                    const hasTitle = link.title && link.title.trim();
+                    
+                    // Check for poor link text
+                    const poorTexts = ['click here', 'read more', 'more', 'link', 'here', ''];
+                    const isPoorText = !text || poorTexts.includes(text.toLowerCase()) || text.length < 4;
+                    
+                    return isPoorText && !hasAriaLabel && !hasAriaLabelledby && !hasTitle;
+                }).map(link => ({
+                    href: link.href,
+                    text: link.textContent.trim(),
+                    title: link.title || null,
+                    selector: link.id ? `#${link.id}` : `a[href="${link.getAttribute('href')}"]`,
+                    location: `${link.getBoundingClientRect().top},${link.getBoundingClientRect().left}`
+                }));
+            }
+        """)
+        
+        if poor_links:
+            issues.append(f"Found {len(poor_links)} link(s) with poor or missing descriptive text")
+            details.extend([f"  - Link '{link['text']}' at {link['location']}" for link in poor_links[:5]])
+            if len(poor_links) > 5:
+                details.append(f"  ... and {len(poor_links) - 5} more")
+
+        # Test 4: Check images without alt text
+        images_without_alt = await page.evaluate("""
+            () => {
+                const images = Array.from(document.querySelectorAll('img'));
+                return images.filter(img => {
+                    const hasAlt = img.getAttribute('alt') !== null;
+                    const hasAriaLabel = img.getAttribute('aria-label') && img.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = img.getAttribute('aria-labelledby');
+                    const isDecorative = img.getAttribute('role') === 'presentation' || img.getAttribute('role') === 'none';
+                    
+                    return !hasAlt && !hasAriaLabel && !hasAriaLabelledby && !isDecorative;
+                }).map(img => ({
+                    src: img.src,
+                    id: img.id || null,
+                    selector: img.id ? `#${img.id}` : `img[src*="${img.src.split('/').pop()}"]`,
+                    location: `${img.getBoundingClientRect().top},${img.getBoundingClientRect().left}`
+                }));
+            }
+        """)
+        
+        if images_without_alt:
+            issues.append(f"Found {len(images_without_alt)} image(s) without alt text")
+            details.extend([f"  - Image at {img['location']}: {img['selector']}" for img in images_without_alt[:5]])
+            if len(images_without_alt) > 5:
+                details.append(f"  ... and {len(images_without_alt) - 5} more")
+
+        # Test 5: Check for redundant or incorrect ARIA roles
+        redundant_roles = await page.evaluate("""
+            () => {
+                const elements = Array.from(document.querySelectorAll('[role]'));
+                return elements.filter(el => {
+                    const role = el.getAttribute('role');
+                    const tagName = el.tagName.toLowerCase();
+                    
+                    // Check for redundant roles
+                    const redundantPairs = {
+                        'button': ['button'],
+                        'link': ['a'],
+                        'heading': ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+                        'textbox': ['input'],
+                        'list': ['ul', 'ol'],
+                        'listitem': ['li']
+                    };
+                    
+                    return redundantPairs[role] && redundantPairs[role].includes(tagName);
+                }).map(el => ({
+                    tagName: el.tagName.toLowerCase(),
+                    role: el.getAttribute('role'),
+                    id: el.id || null,
+                    selector: el.id ? `#${el.id}` : `${el.tagName.toLowerCase()}[role="${el.getAttribute('role')}"]`,
+                    location: `${el.getBoundingClientRect().top},${el.getBoundingClientRect().left}`
+                }));
+            }
+        """)
+        
+        if redundant_roles:
+            issues.append(f"Found {len(redundant_roles)} element(s) with redundant ARIA roles")
+            details.extend([f"  - {role['tagName']} with role='{role['role']}' at {role['location']}" for role in redundant_roles[:5]])
+
+        # Summary
+        total_issues = len(buttons_without_labels) + len(unlabeled_inputs) + len(poor_links) + len(images_without_alt) + len(redundant_roles)
+        details.insert(0, f"ARIA Label Comprehensive Test completed - {total_issues} total issues found")
+
+        result = "Pass" if total_issues == 0 else "Fail"
+        
+        return {
+            "result": result,
+            "bug_fixed": total_issues == 0,
+            "details": details,
+            "issues": issues,
+            "fixes_applied": fixes_applied,
+            "issue_breakdown": {
+                "buttons_without_labels": len(buttons_without_labels),
+                "unlabeled_inputs": len(unlabeled_inputs), 
+                "poor_links": len(poor_links),
+                "images_without_alt": len(images_without_alt),
+                "redundant_roles": len(redundant_roles)
+            },
+            "axe": axe_summary
+        }
+
+    except Exception as e:
+        return {
+            "result": "Fail",
+            "bug_fixed": False,
+            "details": details + [f"Error during ARIA label testing: {e}"],
+            "issues": issues,
+            "fixes_applied": fixes_applied,
+            "axe": axe_summary if 'axe_summary' in locals() else {"error": "axe not run"}
+        }
+
+async def fix_aria_label_issues(page: Page, website: str) -> Dict[str, Any]:
+    """
+    Attempt to automatically fix common ARIA label issues by adding appropriate labels.
+    This function tries to intelligently add ARIA labels based on context.
+    """
+    details: List[str] = []
+    fixes_applied: List[str] = []
+    failed_fixes: List[str] = []
+
+    try:
+        # Fix 1: Add aria-label to buttons without accessible names
+        buttons_fixed = await page.evaluate("""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"]'));
+                let fixed = 0;
+                
+                buttons.forEach(btn => {
+                    const hasAriaLabel = btn.getAttribute('aria-label') && btn.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = btn.getAttribute('aria-labelledby');
+                    const hasVisibleText = btn.textContent && btn.textContent.trim();
+                    const hasValue = btn.value && btn.value.trim();
+                    const hasTitle = btn.title && btn.title.trim();
+                    
+                    if (!hasAriaLabel && !hasAriaLabelledby && !hasVisibleText && !hasValue && !hasTitle) {
+                        // Try to generate an appropriate label
+                        let label = '';
+                        
+                        // Check for icon classes that might indicate purpose
+                        if (btn.className.includes('search')) label = 'Search';
+                        else if (btn.className.includes('close') || btn.className.includes('dismiss')) label = 'Close';
+                        else if (btn.className.includes('menu') || btn.className.includes('hamburger')) label = 'Menu';
+                        else if (btn.className.includes('submit')) label = 'Submit';
+                        else if (btn.className.includes('save')) label = 'Save';
+                        else if (btn.className.includes('delete') || btn.className.includes('remove')) label = 'Delete';
+                        else if (btn.className.includes('edit')) label = 'Edit';
+                        else if (btn.className.includes('add') || btn.className.includes('plus')) label = 'Add';
+                        else if (btn.type === 'submit') label = 'Submit form';
+                        else if (btn.type === 'reset') label = 'Reset form';
+                        else {
+                            // Check parent context
+                            const parent = btn.closest('form, nav, header, footer, main, section');
+                            if (parent) {
+                                const parentRole = parent.getAttribute('role');
+                                if (parentRole === 'navigation' || parent.tagName === 'NAV') label = 'Navigation button';
+                                else if (parent.tagName === 'FORM') label = 'Form button';
+                                else label = 'Action button';
+                            } else {
+                                label = 'Button';
+                            }
+                        }
+                        
+                        if (label) {
+                            btn.setAttribute('aria-label', label);
+                            fixed++;
+                        }
+                    }
+                });
+                
+                return fixed;
+            }
+        """)
+        
+        if buttons_fixed > 0:
+            fixes_applied.append(f"Added aria-label to {buttons_fixed} button(s)")
+
+        # Fix 2: Add labels to form inputs
+        inputs_fixed = await page.evaluate("""
+            () => {
+                const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, select'));
+                let fixed = 0;
+                
+                inputs.forEach(input => {
+                    const hasAriaLabel = input.getAttribute('aria-label') && input.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = input.getAttribute('aria-labelledby');
+                    const hasLabel = document.querySelector(`label[for="${input.id}"]`) && input.id;
+                    const hasPlaceholder = input.placeholder && input.placeholder.trim();
+                    const hasTitle = input.title && input.title.trim();
+                    
+                    if (!hasAriaLabel && !hasAriaLabelledby && !hasLabel && !hasPlaceholder && !hasTitle) {
+                        let label = '';
+                        
+                        // Try to infer label from context
+                        if (input.name) {
+                            label = input.name.replace(/[_-]/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                            label = label.charAt(0).toUpperCase() + label.slice(1);
+                        } else if (input.id) {
+                            label = input.id.replace(/[_-]/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                            label = label.charAt(0).toUpperCase() + label.slice(1);
+                        } else {
+                            // Check input type
+                            switch (input.type) {
+                                case 'email': label = 'Email address'; break;
+                                case 'password': label = 'Password'; break;
+                                case 'tel': label = 'Phone number'; break;
+                                case 'url': label = 'Website URL'; break;
+                                case 'search': label = 'Search'; break;
+                                case 'number': label = 'Number'; break;
+                                case 'date': label = 'Date'; break;
+                                case 'time': label = 'Time'; break;
+                                case 'checkbox': label = 'Checkbox'; break;
+                                case 'radio': label = 'Radio option'; break;
+                                default:
+                                    if (input.tagName === 'TEXTAREA') label = 'Text area';
+                                    else if (input.tagName === 'SELECT') label = 'Select option';
+                                    else label = 'Text input';
+                            }
+                        }
+                        
+                        if (label) {
+                            input.setAttribute('aria-label', label);
+                            fixed++;
+                        }
+                    }
+                });
+                
+                return fixed;
+            }
+        """)
+        
+        if inputs_fixed > 0:
+            fixes_applied.append(f"Added aria-label to {inputs_fixed} form input(s)")
+
+        # Fix 3: Improve link descriptions
+        links_fixed = await page.evaluate("""
+            () => {
+                const links = Array.from(document.querySelectorAll('a[href]'));
+                let fixed = 0;
+                
+                links.forEach(link => {
+                    const hasAriaLabel = link.getAttribute('aria-label') && link.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = link.getAttribute('aria-labelledby');
+                    const text = link.textContent && link.textContent.trim();
+                    const hasTitle = link.title && link.title.trim();
+                    
+                    const poorTexts = ['click here', 'read more', 'more', 'link', 'here', ''];
+                    const isPoorText = !text || poorTexts.includes(text.toLowerCase()) || text.length < 4;
+                    
+                    if (isPoorText && !hasAriaLabel && !hasAriaLabelledby && !hasTitle) {
+                        let label = '';
+                        
+                        // Try to get context from nearby elements
+                        const nearbyText = [];
+                        
+                        // Check previous sibling text
+                        const prevSibling = link.previousElementSibling;
+                        if (prevSibling && prevSibling.textContent) {
+                            nearbyText.push(prevSibling.textContent.trim());
+                        }
+                        
+                        // Check parent text (excluding the link itself)
+                        const parent = link.parentElement;
+                        if (parent) {
+                            const parentText = parent.textContent.replace(link.textContent, '').trim();
+                            if (parentText && parentText.length > 0) {
+                                nearbyText.push(parentText);
+                            }
+                        }
+                        
+                        // Use href as fallback
+                        const href = link.getAttribute('href');
+                        if (href && href !== '#') {
+                            if (href.startsWith('mailto:')) {
+                                label = `Email ${href.replace('mailto:', '')}`;
+                            } else if (href.startsWith('tel:')) {
+                                label = `Call ${href.replace('tel:', '')}`;
+                            } else if (href.includes('download')) {
+                                label = 'Download file';
+                            } else {
+                                // Use the best nearby text or generate from URL
+                                if (nearbyText.length > 0) {
+                                    label = nearbyText[0].substring(0, 50);
+                                } else {
+                                    try {
+                                        const url = new URL(href, window.location.href);
+                                        const path = url.pathname.split('/').pop() || url.hostname;
+                                        label = `Link to ${path}`;
+                                    } catch (e) {
+                                        label = 'External link';
+                                    }
+                                }
+                            }
+                        } else {
+                            label = 'Link';
+                        }
+                        
+                        if (label && label.length > 0) {
+                            link.setAttribute('aria-label', label);
+                            fixed++;
+                        }
+                    }
+                });
+                
+                return fixed;
+            }
+        """)
+        
+        if links_fixed > 0:
+            fixes_applied.append(f"Improved descriptions for {links_fixed} link(s)")
+
+        # Fix 4: Add alt text to images
+        images_fixed = await page.evaluate("""
+            () => {
+                const images = Array.from(document.querySelectorAll('img'));
+                let fixed = 0;
+                
+                images.forEach(img => {
+                    const hasAlt = img.getAttribute('alt') !== null;
+                    const hasAriaLabel = img.getAttribute('aria-label') && img.getAttribute('aria-label').trim();
+                    const hasAriaLabelledby = img.getAttribute('aria-labelledby');
+                    const isDecorative = img.getAttribute('role') === 'presentation' || img.getAttribute('role') === 'none';
+                    
+                    if (!hasAlt && !hasAriaLabel && !hasAriaLabelledby && !isDecorative) {
+                        let altText = '';
+                        
+                        // Try to generate alt text from src or context
+                        const src = img.src;
+                        if (src) {
+                            const filename = src.split('/').pop().split('.')[0];
+                            if (filename) {
+                                altText = filename.replace(/[_-]/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                                altText = altText.charAt(0).toUpperCase() + altText.slice(1);
+                            }
+                        }
+                        
+                        // Check for common icon/logo patterns
+                        if (img.className.includes('logo')) altText = 'Logo';
+                        else if (img.className.includes('icon')) altText = 'Icon';
+                        else if (img.className.includes('avatar')) altText = 'User avatar';
+                        else if (!altText) altText = 'Image';
+                        
+                        img.setAttribute('alt', altText);
+                        fixed++;
+                    }
+                });
+                
+                return fixed;
+            }
+        """)
+        
+        if images_fixed > 0:
+            fixes_applied.append(f"Added alt text to {images_fixed} image(s)")
+
+        # Fix 5: Remove redundant ARIA roles
+        redundant_fixed = await page.evaluate("""
+            () => {
+                const elements = Array.from(document.querySelectorAll('[role]'));
+                let fixed = 0;
+                
+                elements.forEach(el => {
+                    const role = el.getAttribute('role');
+                    const tagName = el.tagName.toLowerCase();
+                    
+                    const redundantPairs = {
+                        'button': ['button'],
+                        'link': ['a'],
+                        'heading': ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+                        'textbox': ['input'],
+                        'list': ['ul', 'ol'],
+                        'listitem': ['li']
+                    };
+                    
+                    if (redundantPairs[role] && redundantPairs[role].includes(tagName)) {
+                        el.removeAttribute('role');
+                        fixed++;
+                    }
+                });
+                
+                return fixed;
+            }
+        """)
+        
+        if redundant_fixed > 0:
+            fixes_applied.append(f"Removed {redundant_fixed} redundant ARIA role(s)")
+
+        details.append(f"ARIA Label Bug Fixing completed - {len(fixes_applied)} types of fixes applied")
+        details.extend(fixes_applied)
+        
+        if failed_fixes:
+            details.append("Failed fixes:")
+            details.extend(failed_fixes)
+
+        return {
+            "result": "Pass" if len(fixes_applied) > 0 else "Fail",
+            "bug_fixed": len(fixes_applied) > 0,
+            "details": details,
+            "fixes_applied": fixes_applied,
+            "failed_fixes": failed_fixes,
+            "fix_count": {
+                "buttons": buttons_fixed,
+                "inputs": inputs_fixed,
+                "links": links_fixed,
+                "images": images_fixed,
+                "redundant_roles": redundant_fixed
+            }
+        }
+
+    except Exception as e:
+        return {
+            "result": "Fail",
+            "bug_fixed": False,
+            "details": details + [f"Error during ARIA label fixing: {e}"],
+            "fixes_applied": fixes_applied,
+            "failed_fixes": failed_fixes + [f"Critical error: {e}"]
+        }
+
+async def test_and_fix_aria_labels(page: Page, website: str) -> Dict[str, Any]:
+    """
+    Comprehensive ARIA label testing with automatic bug fixing.
+    This function first detects ARIA issues, then attempts to fix them, and finally validates the fixes.
+    """
+    details: List[str] = []
+    all_issues: List[str] = []
+    
+    try:
+        # Step 1: Run initial detection to identify issues
+        details.append("=== ARIA LABEL DETECTION PHASE ===")
+        initial_test = await test_aria_labels_comprehensive(page, website)
+        initial_issues = initial_test.get("issue_breakdown", {})
+        
+        total_initial_issues = sum(initial_issues.values()) if initial_issues else 0
+        details.append(f"Initial scan found {total_initial_issues} ARIA-related issues:")
+        
+        for issue_type, count in initial_issues.items():
+            if count > 0:
+                details.append(f"  - {issue_type.replace('_', ' ').title()}: {count}")
+                all_issues.extend(initial_test.get("issues", []))
+        
+        # Step 2: Apply automatic fixes if issues were found
+        fixes_result = {"fixes_applied": [], "fix_count": {}}
+        if total_initial_issues > 0:
+            details.append("\n=== ARIA LABEL FIXING PHASE ===")
+            fixes_result = await fix_aria_label_issues(page, website)
+            details.extend(fixes_result.get("details", []))
+        else:
+            details.append("\n=== NO FIXES NEEDED ===")
+            details.append("No ARIA label issues detected, skipping fix phase")
+        
+        # Step 3: Re-run detection to validate fixes
+        details.append("\n=== VALIDATION PHASE ===")
+        final_test = await test_aria_labels_comprehensive(page, website)
+        final_issues = final_test.get("issue_breakdown", {})
+        
+        total_final_issues = sum(final_issues.values()) if final_issues else 0
+        issues_fixed = total_initial_issues - total_final_issues
+        
+        details.append(f"Post-fix scan found {total_final_issues} remaining issues")
+        details.append(f"Successfully resolved {issues_fixed} issues")
+        
+        if total_final_issues > 0:
+            details.append("Remaining issues:")
+            for issue_type, count in final_issues.items():
+                if count > 0:
+                    details.append(f"  - {issue_type.replace('_', ' ').title()}: {count}")
+        
+        # Determine overall result
+        significant_improvement = issues_fixed >= (total_initial_issues * 0.5)  # Fixed at least 50%
+        no_critical_remaining = total_final_issues < 5  # Less than 5 remaining issues
+        
+        if total_initial_issues == 0:
+            result = "Pass"
+            bug_status = "No bugs detected"
+        elif total_final_issues == 0:
+            result = "Pass"
+            bug_status = "All bugs fixed"
+        elif significant_improvement and no_critical_remaining:
+            result = "Pass"
+            bug_status = "Significant improvement achieved"
+        else:
+            result = "Fail"
+            bug_status = "Issues remain after attempted fixes"
+        
+        return {
+            "result": result,
+            "bug_fixed": total_final_issues < total_initial_issues,
+            "details": details,
+            "issues": all_issues,
+            "fixes_applied": fixes_result.get("fixes_applied", []),
+            "bug_status": bug_status,
+            "metrics": {
+                "initial_issues": total_initial_issues,
+                "final_issues": total_final_issues,
+                "issues_fixed": issues_fixed,
+                "fix_success_rate": (issues_fixed / total_initial_issues * 100) if total_initial_issues > 0 else 100
+            },
+            "initial_breakdown": initial_issues,
+            "final_breakdown": final_issues,
+            "axe": final_test.get("axe", {})
+        }
+        
+    except Exception as e:
+        return {
+            "result": "Fail",
+            "bug_fixed": False,
+            "details": details + [f"Error in ARIA test and fix process: {e}"],
+            "issues": all_issues,
+            "fixes_applied": [],
+            "bug_status": f"Error occurred: {e}",
+            "axe": {"error": "Test failed before axe could run"}
+        }
+
+# ---------------- scenario executor ----------------
 async def execute_scenario_with_page(scenario, page: Page, website: str):
     scenario_id = scenario.get("scenario_id", "unknown")
     kind = scenario.get("kind")
@@ -357,6 +1000,38 @@ async def execute_scenario_with_page(scenario, page: Page, website: str):
             test_out = await test_tablist_children_group(page, website)
             results["result"] = test_out.get("result", "Fail")
             results["details"] = test_out.get("details", [])
+            if "bug_fixed" in test_out:
+                results["bug_fixed"] = test_out["bug_fixed"]
+            if "axe" in test_out:
+                results["axe"] = test_out["axe"]
+        elif kind == "a11y_aria_labels_comprehensive":
+            test_out = await test_aria_labels_comprehensive(page, website)
+            results["result"] = test_out.get("result", "Fail")
+            results["details"] = test_out.get("details", [])
+            results["issues"] = test_out.get("issues", [])
+            results["issue_breakdown"] = test_out.get("issue_breakdown", {})
+            if "bug_fixed" in test_out:
+                results["bug_fixed"] = test_out["bug_fixed"]
+            if "axe" in test_out:
+                results["axe"] = test_out["axe"]
+        elif kind == "a11y_aria_labels_fix":
+            test_out = await fix_aria_label_issues(page, website)
+            results["result"] = test_out.get("result", "Fail")
+            results["details"] = test_out.get("details", [])
+            results["fixes_applied"] = test_out.get("fixes_applied", [])
+            results["fix_count"] = test_out.get("fix_count", {})
+            if "bug_fixed" in test_out:
+                results["bug_fixed"] = test_out["bug_fixed"]
+        elif kind == "a11y_aria_labels_test_and_fix":
+            test_out = await test_and_fix_aria_labels(page, website)
+            results["result"] = test_out.get("result", "Fail")
+            results["details"] = test_out.get("details", [])
+            results["issues"] = test_out.get("issues", [])
+            results["fixes_applied"] = test_out.get("fixes_applied", [])
+            results["bug_status"] = test_out.get("bug_status", "Unknown")
+            results["metrics"] = test_out.get("metrics", {})
+            results["initial_breakdown"] = test_out.get("initial_breakdown", {})
+            results["final_breakdown"] = test_out.get("final_breakdown", {})
             if "bug_fixed" in test_out:
                 results["bug_fixed"] = test_out["bug_fixed"]
             if "axe" in test_out:
